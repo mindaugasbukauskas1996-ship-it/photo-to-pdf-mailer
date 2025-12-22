@@ -37,20 +37,49 @@ function vilniusDateYYYYMMDD() {
 async function imageToSinglePagePdf(imageBytes) {
   const pdfDoc = await PDFDocument.create();
 
-  // Bandome JPG, jei nepavyksta – PNG
-  let embedded;
+  let image;
   try {
-    embedded = await pdfDoc.embedJpg(imageBytes);
+    image = await pdfDoc.embedJpg(imageBytes);
   } catch {
-    embedded = await pdfDoc.embedPng(imageBytes);
+    image = await pdfDoc.embedPng(imageBytes);
   }
 
-  const { width, height } = embedded.scale(1);
-  const page = pdfDoc.addPage([width, height]);
-  page.drawImage(embedded, { x: 0, y: 0, width, height });
+  const imgWidth = image.width;
+  const imgHeight = image.height;
+
+  // A4 dydžiai PDF taškais
+  const A4_PORTRAIT = { width: 595, height: 842 };
+  const A4_LANDSCAPE = { width: 842, height: 595 };
+
+  // Parenkam orientaciją pagal nuotrauką
+  const pageSize =
+    imgWidth > imgHeight ? A4_LANDSCAPE : A4_PORTRAIT;
+
+  const page = pdfDoc.addPage([pageSize.width, pageSize.height]);
+
+  // Skalė, kad tilptų į A4 ir neiškraipytų proporcijų
+  const scale = Math.min(
+    pageSize.width / imgWidth,
+    pageSize.height / imgHeight
+  );
+
+  const drawWidth = imgWidth * scale;
+  const drawHeight = imgHeight * scale;
+
+  // Centravimas
+  const x = (pageSize.width - drawWidth) / 2;
+  const y = (pageSize.height - drawHeight) / 2;
+
+  page.drawImage(image, {
+    x,
+    y,
+    width: drawWidth,
+    height: drawHeight
+  });
 
   return await pdfDoc.save();
 }
+
 
 app.post("/upload", upload.single("photo"), async (req, res) => {
   const startedAt = Date.now();

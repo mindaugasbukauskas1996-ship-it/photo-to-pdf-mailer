@@ -40,6 +40,7 @@ async function imageToSinglePagePdf(imageBytes) {
 
 app.post("/upload", upload.single("photo"), async (req, res) => {
   try {
+    console.log("UPLOAD: request received");
     if (!req.file) {
       return res.status(400).json({ error: "Nėra failo" });
     }

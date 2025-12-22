@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="lt">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Foto → PDF</title>
+</head>
+<body>
+  <h2>Nuotrauka → PDF → el. paštas</h2>
+
+  <input type="file" id="camera" accept="image/*" capture="environment" style="display:none">
+
+  <button onclick="document.getElementById('camera').click()">
+    Fotografuoti
+  </button>
+
+  <p id="status"></p>
+
+<script>
+  const input = document.getElementById("camera");
+  const statusEl = document.getElementById("status");
+
+  input.addEventListener("change", async () => {
+    if (!input.files.length) return;
+
+    statusEl.textContent = "Siunčiama...";
+
+    const form = new FormData();
+    form.append("photo", input.files[0]);
+
+    try {
+      const res = await fetch("/upload", { method: "POST", body: form });
+      const data = await res.json();
+
+      if (!res.ok) throw new Error(data.error);
+
+      statusEl.textContent = "PDF išsiųstas (" + data.filename + ")";
+      input.value = "";
+    } catch (e) {
+      statusEl.textContent = "Klaida: " + e.message;
+    }
+  });
+</script>
+</body>
+</html>

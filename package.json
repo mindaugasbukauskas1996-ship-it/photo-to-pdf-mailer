@@ -7,10 +7,9 @@
     "start": "node server.js"
   },
   "dependencies": {
+    "@sendgrid/mail": "^8.1.4",
     "express": "^4.19.2",
     "multer": "^1.4.5-lts.1",
-    "nodemailer": "^6.9.15",
     "pdf-lib": "^1.17.1"
-    "@sendgrid/mail": "^8.1.4"
   }
 }

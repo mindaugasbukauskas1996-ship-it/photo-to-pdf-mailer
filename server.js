@@ -1,6 +1,6 @@
 import express from "express";
 import multer from "multer";
-import { PDFDocument } from "pdf-lib";
+import { PDFDocument, degrees } from "pdf-lib";
 import sgMail from "@sendgrid/mail";
 
 const app = express();
@@ -12,8 +12,6 @@ const upload = multer({
 });
 
 app.use(express.static("public"));
-
-// Health check (patogiam testui)
 app.get("/health", (req, res) => res.json({ ok: true }));
 
 function requireEnv(name) {
@@ -33,7 +31,11 @@ function vilniusDateYYYYMMDD() {
   return fmt.format(new Date());
 }
 
-// 1 nuotrauka -> 1 puslapio PDF (spalvotas)
+/**
+ * Visada A4 portrait (595x842).
+ * Jei nuotrauka horizontali – automatiškai pasukama 90° ir tada sutalpinama į A4.
+ * Nekarpoma, išlaiko proporcijas, centruojama.
+ */
 async function imageToSinglePagePdf(imageBytes) {
   const pdfDoc = await PDFDocument.create();
 
@@ -44,42 +46,60 @@ async function imageToSinglePagePdf(imageBytes) {
     image = await pdfDoc.embedPng(imageBytes);
   }
 
-  const imgWidth = image.width;
-  const imgHeight = image.height;
+  const imgW = image.width;
+  const imgH = image.height;
 
-  // A4 dydžiai PDF taškais
-  const A4_PORTRAIT = { width: 595, height: 842 };
-  const A4_LANDSCAPE = { width: 842, height: 595 };
+  // Visada A4 stačiai
+  const pageW = 595;
+  const pageH = 842;
+  const page = pdfDoc.addPage([pageW, pageH]);
 
-  // Parenkam orientaciją pagal nuotrauką
-  const pageSize =
-    imgWidth > imgHeight ? A4_LANDSCAPE : A4_PORTRAIT;
+  const isLandscape = imgW > imgH;
 
-  const page = pdfDoc.addPage([pageSize.width, pageSize.height]);
+  if (!isLandscape) {
+    // Vertikali nuotrauka: sutalpinam į A4
+    const scale = Math.min(pageW / imgW, pageH / imgH);
+    const drawW = imgW * scale;
+    const drawH = imgH * scale;
 
-  // Skalė, kad tilptų į A4 ir neiškraipytų proporcijų
-  const scale = Math.min(
-    pageSize.width / imgWidth,
-    pageSize.height / imgHeight
-  );
+    const x = (pageW - drawW) / 2;
+    const y = (pageH - drawH) / 2;
 
-  const drawWidth = imgWidth * scale;
-  const drawHeight = imgHeight * scale;
+    page.drawImage(image, { x, y, width: drawW, height: drawH });
+  } else {
+    // Horizontali nuotrauka: pasukam 90° CCW ir sutalpinam į A4
+    const rotatedW = imgH;
+    const rotatedH = imgW;
 
-  // Centravimas
-  const x = (pageSize.width - drawWidth) / 2;
-  const y = (pageSize.height - drawHeight) / 2;
+    const scale = Math.min(pageW / rotatedW, pageH / rotatedH);
 
-  page.drawImage(image, {
-    x,
-    y,
-    width: drawWidth,
-    height: drawHeight
-  });
+    // Po scaling taikomas originaliems matmenims
+    const drawW = imgW * scale;
+    const drawH = imgH * scale;
+
+    // Pasukus 90°: bounding box tampa width = drawH, height = drawW
+    const bboxW = drawH;
+    const bboxH = drawW;
+
+    const bx = (pageW - bboxW) / 2;
+    const by = (pageH - bboxH) / 2;
+
+    // Sukant aplink (x,y), reikia kompensuoti, kad bbox prasidėtų nuo bx
+    // bbox x prasideda (x - drawH), todėl x = bx + drawH
+    const x = bx + drawH;
+    const y = by;
+
+    page.drawImage(image, {
+      x,
+      y,
+      width: drawW,
+      height: drawH,
+      rotate: degrees(90)
+    });
+  }
 
   return await pdfDoc.save();
 }
-
 
 app.post("/upload", upload.single("photo"), async (req, res) => {
   const startedAt = Date.now();
@@ -100,7 +120,7 @@ app.post("/upload", upload.single("photo"), async (req, res) => {
 
     const filename = `${vilniusDateYYYYMMDD()}.pdf`;
 
-    console.log("UPLOAD: generating PDF...");
+    console.log("UPLOAD: generating PDF (A4 portrait)...");
     const pdfBytes = await imageToSinglePagePdf(req.file.buffer);
     console.log("UPLOAD: PDF generated, bytes=" + pdfBytes.length);
 
@@ -108,7 +128,6 @@ app.post("/upload", upload.single("photo"), async (req, res) => {
     const FROM_EMAIL = requireEnv("FROM_EMAIL"); // turi būti verified SendGrid
     const TO_EMAIL = process.env.TO_EMAIL || "mindaugas.bukauskas@manobustas.lt";
 
-    // Nustatom API key (SendGrid Web API per HTTPS)
     sgMail.setApiKey(SENDGRID_API_KEY);
 
     console.log("UPLOAD: sending via SendGrid Web API...");
@@ -134,7 +153,6 @@ app.post("/upload", upload.single("photo"), async (req, res) => {
 
     return res.json({ ok: true, filename });
   } catch (err) {
-    // SendGrid klaidos dažnai būna err.response.body
     const sgBody = err?.response?.body;
     if (sgBody) {
       console.error("UPLOAD ERROR (SendGrid):", JSON.stringify(sgBody));

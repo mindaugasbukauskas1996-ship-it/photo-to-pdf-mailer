@@ -16,11 +16,30 @@
     #preview { width: 100%; display: block; transform-origin: center center; }
     .muted { color: #666; font-size: 14px; margin-top: 8px; }
     .danger { color: #b00020; }
+
+    /* NEW */
+    label { display:block; font-size: 14px; color:#444; margin-top: 10px; }
+    input[type="text"]{
+      width:100%;
+      padding: 12px 12px;
+      font-size: 16px;
+      border-radius: 10px;
+      border: 1px solid #ccc;
+      box-sizing: border-box;
+      margin-top: 6px;
+    }
   </style>
 </head>
 <body>
   <div class="card">
     <h2>Nuotrauka → PDF → el. paštas</h2>
+
+    <!-- NEW: input fields -->
+    <label for="accountNo">Paskyros nr.:</label>
+    <input id="accountNo" type="text" placeholder="pvz. 123456" autocomplete="off" />
+
+    <label for="address">Adresas:</label>
+    <input id="address" type="text" placeholder="pvz. Gedimino pr. 15, Vilnius" autocomplete="off" />
 
     <input id="camera" type="file" accept="image/*" capture="environment" style="display:none" />
 
@@ -40,7 +59,7 @@
       </div>
     </div>
 
-    <div id="status" class="muted">Paspauskite „Fotografuoti“.</div>
+    <div id="status" class="muted">Įveskite paskyros nr. ir adresą, tada spauskite „Fotografuoti“.</div>
     <div class="muted">Gavėjas: mindaugas.bukauskas@manobustas.lt</div>
   </div>
 
@@ -55,6 +74,10 @@
   const rotR = document.getElementById('rotR');
   const sendBtn = document.getElementById('send');
   const retakeBtn = document.getElementById('retake');
+
+  // NEW
+  const accountNoEl = document.getElementById('accountNo');
+  const addressEl = document.getElementById('address');
 
   let file = null;
   let rotation = 0; // 0, 90, 180, 270
@@ -85,111 +108,12 @@
     rotR.disabled = isBusy;
     retakeBtn.disabled = isBusy;
     primary.disabled = isBusy;
+    accountNoEl.disabled = isBusy;
+    addressEl.disabled = isBusy;
   }
 
-  primary.addEventListener('click', () => input.click());
-
-  input.addEventListener('change', () => {
-    if (!input.files || !input.files[0]) return;
-
-    // SVARBU: nevalom input.value čia, nes kai kuriuose telefonuose tai „numeta“ failą
-    clearPreview();
-
-    file = input.files[0];
-
-    objectUrl = URL.createObjectURL(file);
-    preview.src = objectUrl;
-    previewWrap.style.display = "block";
-
-    setStatus("Jei reikia – pasukite. Tada spauskite „Siųsti į PDF“.");
-  });
-
-  rotL.addEventListener('click', () => {
-    rotation = (rotation + 270) % 360;
-    updatePreviewTransform();
-  });
-
-  rotR.addEventListener('click', () => {
-    rotation = (rotation + 90) % 360;
-    updatePreviewTransform();
-  });
-
-  retakeBtn.addEventListener('click', () => {
-    clearPreview();
-    input.value = ""; // čia jau galima išvalyti
-    input.click();
-  });
-
-  async function loadBitmapFromFile(file) {
-    // Bandome normalizuoti EXIF orientaciją naršyklės pusėje, jei palaikoma
-    if ('createImageBitmap' in window) {
-      try {
-        return await createImageBitmap(file, { imageOrientation: 'from-image' });
-      } catch (_) {}
-    }
-
-    // Fallback per <img>
-    return await new Promise((resolve, reject) => {
-      const img = new Image();
-      img.onload = () => resolve(img);
-      img.onerror = reject;
-      img.src = URL.createObjectURL(file);
-    });
-  }
-
-  async function rotateToBlob(file, rotationDeg) {
-    const bitmap = await loadBitmapFromFile(file);
-    const w = bitmap.width;
-    const h = bitmap.height;
-
-    const rot = ((rotationDeg % 360) + 360) % 360;
-    const swap = rot === 90 || rot === 270;
-
-    const canvas = document.createElement('canvas');
-    canvas.width = swap ? h : w;
-    canvas.height = swap ? w : h;
-
-    const ctx = canvas.getContext('2d');
-    ctx.save();
-    ctx.translate(canvas.width / 2, canvas.height / 2);
-    ctx.rotate(rot * Math.PI / 180);
-    ctx.drawImage(bitmap, -w / 2, -h / 2);
-    ctx.restore();
-
-    return await new Promise((resolve) => {
-      canvas.toBlob((blob) => resolve(blob), 'image/jpeg', 0.92);
-    });
-  }
-
-  sendBtn.addEventListener('click', async () => {
-    if (!file) {
-      setStatus("Pirma padarykite nuotrauką.", true);
-      return;
-    }
-
-    setBusy(true);
-    setStatus("Ruošiama ir siunčiama...");
-
-    try {
-      const rotatedBlob = await rotateToBlob(file, rotation);
-
-      const form = new FormData();
-      form.append('photo', rotatedBlob, 'photo.jpg');
-
-      const res = await fetch('/upload', { method: 'POST', body: form });
-      const data = await res.json();
-
-      if (!res.ok) throw new Error(data?.error || 'Nepavyko');
-
-      setStatus(`Išsiųsta. PDF failas: ${data.filename}`);
-      clearPreview();
-      input.value = ""; // po sėkmės išvalom
-    } catch (e) {
-      setStatus("Klaida: " + e.message, true);
-    } finally {
-      setBusy(false);
-    }
-  });
-</script>
-</body>
-</html>
+  function validateMeta() {
+    const accountNo = (accountNoEl.value || "").trim();
+    const address = (addressEl.value || "").trim();
+    if (!accountNo) return { ok:false, error:"Įveskite Paskyros nr." };
+    if (!address) return {

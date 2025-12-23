@@ -6,18 +6,33 @@
   <title>Foto → PDF</title>
   <style>
     body { font-family: system-ui, Arial; margin: 20px; }
-    .card { max-width: 520px; margin: 0 auto; padding: 16px; border: 1px solid #ddd; border-radius: 12px; }
-    button { padding: 12px 14px; font-size: 16px; border-radius: 10px; border: 1px solid #ccc; background: #fff; cursor: pointer; }
+    .card { max-width: 560px; margin: 0 auto; padding: 16px; border: 1px solid #ddd; border-radius: 12px; }
+    h2 { margin: 0 0 10px 0; }
     .row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
-    #primary { width: 100%; font-size: 18px; border: 0; background: #111; color: #fff; }
+
+    button {
+      padding: 12px 14px;
+      font-size: 16px;
+      border-radius: 10px;
+      border: 1px solid #ccc;
+      background: #fff;
+      cursor: pointer;
+    }
+
+    .btnPrimary {
+      width: 100%;
+      font-size: 18px;
+      border: 0;
+      background: #111;
+      color: #fff;
+    }
+
+    .btnWide { width: 100%; font-size: 18px; }
+
     #status { margin-top: 10px; color: #555; }
-    #previewWrap { margin-top: 12px; display: none; }
-    #previewBox { width: 100%; border: 1px solid #ddd; border-radius: 12px; overflow: hidden; background: #fafafa; }
-    #preview { width: 100%; display: block; transform-origin: center center; }
     .muted { color: #666; font-size: 14px; margin-top: 8px; }
     .danger { color: #b00020; }
 
-    /* NEW */
     label { display:block; font-size: 14px; color:#444; margin-top: 10px; }
     input[type="text"]{
       width:100%;
@@ -28,22 +43,39 @@
       box-sizing: border-box;
       margin-top: 6px;
     }
+
+    #previewWrap { margin-top: 12px; display: none; }
+    #previewBox { width: 100%; border: 1px solid #ddd; border-radius: 12px; overflow: hidden; background: #fafafa; }
+    #preview { width: 100%; display: block; transform-origin: center center; }
+
+    /* iOS-safe paslėpimas (ne display:none) */
+    .fileInputHidden{
+      position: absolute;
+      left: -9999px;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+    }
   </style>
 </head>
 <body>
   <div class="card">
     <h2>Nuotrauka → PDF → el. paštas</h2>
 
-    <!-- NEW: input fields -->
     <label for="accountNo">Paskyros nr.:</label>
     <input id="accountNo" type="text" placeholder="pvz. 123456" autocomplete="off" />
 
     <label for="address">Adresas:</label>
     <input id="address" type="text" placeholder="pvz. Gedimino pr. 15, Vilnius" autocomplete="off" />
 
-    <input id="camera" type="file" accept="image/*" capture="environment" style="display:none" />
+    <!-- 2 atskiri input'ai stabilumui -->
+    <input id="cameraInput" type="file" accept="image/*" capture="environment" class="fileInputHidden" />
+    <input id="galleryInput" type="file" accept="image/*" class="fileInputHidden" />
 
-    <button id="primary" type="button">Fotografuoti</button>
+    <div class="row">
+      <button id="btnCamera" type="button" class="btnPrimary">Fotografuoti</button>
+      <button id="btnGallery" type="button" class="btnWide">Įkelti iš galerijos</button>
+    </div>
 
     <div id="previewWrap">
       <div class="muted">Peržiūra (pasukite jei reikia, tada siųskite):</div>
@@ -52,20 +84,23 @@
       </div>
 
       <div class="row">
-        <button id="rotL" type="button">⟲ Pasukti kairėn</button>
-        <button id="rotR" type="button">⟳ Pasukti dešinėn</button>
-        <button id="send" type="button" style="border:0;background:#111;color:#fff;">Siųsti į PDF</button>
-        <button id="retake" type="button">Perfotografuoti</button>
+        <button id="rotL" type="button">Pasukti kairėn</button>
+        <button id="rotR" type="button">Pasukti dešinėn</button>
+        <button id="send" type="button" class="btnPrimary">Siųsti į PDF</button>
+        <button id="retake" type="button">Iš naujo</button>
       </div>
     </div>
 
-    <div id="status" class="muted">Įveskite paskyros nr. ir adresą, tada spauskite „Fotografuoti“.</div>
+    <div id="status" class="muted">Įveskite paskyros nr. ir adresą, tada pasirinkite kamerą arba galeriją.</div>
     <div class="muted">Gavėjas: mindaugas.bukauskas@manobustas.lt</div>
   </div>
 
 <script>
-  const input = document.getElementById('camera');
-  const primary = document.getElementById('primary');
+  const cameraInput = document.getElementById('cameraInput');
+  const galleryInput = document.getElementById('galleryInput');
+  const btnCamera = document.getElementById('btnCamera');
+  const btnGallery = document.getElementById('btnGallery');
+
   const previewWrap = document.getElementById('previewWrap');
   const preview = document.getElementById('preview');
   const statusEl = document.getElementById('status');
@@ -75,7 +110,6 @@
   const sendBtn = document.getElementById('send');
   const retakeBtn = document.getElementById('retake');
 
-  // NEW
   const accountNoEl = document.getElementById('accountNo');
   const addressEl = document.getElementById('address');
 
@@ -88,6 +122,27 @@
     statusEl.className = isError ? "muted danger" : "muted";
   }
 
+  function validateMeta() {
+    const accountNo = (accountNoEl.value || "").trim();
+    const address = (addressEl.value || "").trim();
+    if (!accountNo) return { ok:false, error:"Įveskite Paskyros nr." };
+    if (!address) return { ok:false, error:"Įveskite Adresą." };
+    return { ok:true, accountNo, address };
+  }
+
+  function setBusy(isBusy) {
+    sendBtn.disabled = isBusy;
+    rotL.disabled = isBusy;
+    rotR.disabled = isBusy;
+    retakeBtn.disabled = isBusy;
+
+    btnCamera.disabled = isBusy;
+    btnGallery.disabled = isBusy;
+
+    accountNoEl.disabled = isBusy;
+    addressEl.disabled = isBusy;
+  }
+
   function updatePreviewTransform() {
     preview.style.transform = `rotate(${rotation}deg)`;
   }
@@ -97,23 +152,144 @@
     rotation = 0;
     updatePreviewTransform();
     previewWrap.style.display = "none";
+
     if (objectUrl) URL.revokeObjectURL(objectUrl);
     objectUrl = null;
     preview.src = "";
   }
 
-  function setBusy(isBusy) {
-    sendBtn.disabled = isBusy;
-    rotL.disabled = isBusy;
-    rotR.disabled = isBusy;
-    retakeBtn.disabled = isBusy;
-    primary.disabled = isBusy;
-    accountNoEl.disabled = isBusy;
-    addressEl.disabled = isBusy;
+  function openPicker(which) {
+    const v = validateMeta();
+    if (!v.ok) {
+      setStatus(v.error, true);
+      return;
+    }
+
+    // click turi įvykti tiesiogiai per user gesture (button click)
+    if (which === "camera") cameraInput.click();
+    if (which === "gallery") galleryInput.click();
   }
 
-  function validateMeta() {
-    const accountNo = (accountNoEl.value || "").trim();
-    const address = (addressEl.value || "").trim();
-    if (!accountNo) return { ok:false, error:"Įveskite Paskyros nr." };
-    if (!address) return {
+  btnCamera.addEventListener('click', () => openPicker("camera"));
+  btnGallery.addEventListener('click', () => openPicker("gallery"));
+
+  function handleSelectedFile(selectedFile) {
+    if (!selectedFile) return;
+
+    clearPreview();
+    file = selectedFile;
+
+    objectUrl = URL.createObjectURL(file);
+    preview.src = objectUrl;
+
+    previewWrap.style.display = "block";
+    setStatus("Jei reikia – pasukite. Tada spauskite „Siųsti į PDF“.");
+  }
+
+  cameraInput.addEventListener('change', () => {
+    handleSelectedFile(cameraInput.files && cameraInput.files[0]);
+  });
+
+  galleryInput.addEventListener('change', () => {
+    handleSelectedFile(galleryInput.files && galleryInput.files[0]);
+  });
+
+  rotL.addEventListener('click', () => {
+    rotation = (rotation + 270) % 360;
+    updatePreviewTransform();
+  });
+
+  rotR.addEventListener('click', () => {
+    rotation = (rotation + 90) % 360;
+    updatePreviewTransform();
+  });
+
+  retakeBtn.addEventListener('click', () => {
+    clearPreview();
+    cameraInput.value = "";
+    galleryInput.value = "";
+    // dažniausiai "Iš naujo" reiškia vėl fotografuoti
+    cameraInput.click();
+  });
+
+  async function loadBitmapFromFile(file) {
+    // iOS/Safari: createImageBitmap dažnai veikia; jei ne — fallback
+    if ('createImageBitmap' in window) {
+      try {
+        return await createImageBitmap(file, { imageOrientation: 'from-image' });
+      } catch (_) {}
+    }
+
+    return await new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = URL.createObjectURL(file);
+    });
+  }
+
+  async function rotateToBlob(file, rotationDeg) {
+    const bitmap = await loadBitmapFromFile(file);
+    const w = bitmap.width;
+    const h = bitmap.height;
+
+    const rot = ((rotationDeg % 360) + 360) % 360;
+    const swap = rot === 90 || rot === 270;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = swap ? h : w;
+    canvas.height = swap ? w : h;
+
+    const ctx = canvas.getContext('2d');
+    ctx.save();
+    ctx.translate(canvas.width / 2, canvas.height / 2);
+    ctx.rotate(rot * Math.PI / 180);
+    ctx.drawImage(bitmap, -w / 2, -h / 2);
+    ctx.restore();
+
+    return await new Promise((resolve) => {
+      canvas.toBlob((blob) => resolve(blob), 'image/jpeg', 0.92);
+    });
+  }
+
+  sendBtn.addEventListener('click', async () => {
+    const v = validateMeta();
+    if (!v.ok) {
+      setStatus(v.error, true);
+      return;
+    }
+
+    if (!file) {
+      setStatus("Pirma pasirinkite nuotrauką (kamera arba galerija).", true);
+      return;
+    }
+
+    setBusy(true);
+    setStatus("Ruošiama ir siunčiama...");
+
+    try {
+      const rotatedBlob = await rotateToBlob(file, rotation);
+
+      const form = new FormData();
+      form.append('photo', rotatedBlob, 'photo.jpg');
+      form.append('accountNo', v.accountNo);
+      form.append('address', v.address);
+
+      const res = await fetch('/upload', { method: 'POST', body: form });
+      const data = await res.json();
+
+      if (!res.ok) throw new Error(data?.error || 'Nepavyko');
+
+      setStatus(`Išsiųsta. PDF: ${data.filename}`);
+      clearPreview();
+      cameraInput.value = "";
+      galleryInput.value = "";
+    } catch (e) {
+      setStatus("Klaida: " + (e?.message || e), true);
+    } finally {
+      setBusy(false);
+    }
+  });
+</script>
+</body>
+</html>

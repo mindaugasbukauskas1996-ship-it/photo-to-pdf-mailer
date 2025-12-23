@@ -63,7 +63,7 @@
     <h2>Nuotrauka → PDF → el. paštas</h2>
 
     <label for="accountNo">Paskyros nr.:</label>
-    <input id="accountNo" type="text" placeholder="pvz. 123456" autocomplete="off" />
+    <input id="accountNo" type="text" placeholder="V26-5636215" autocomplete="off" />
 
     <label for="address">Adresas:</label>
     <input id="address" type="text" placeholder="pvz. Gedimino pr. 15, Vilnius" autocomplete="off" />
@@ -89,9 +89,13 @@
         <button id="send" type="button" class="btnPrimary">Siųsti į PDF</button>
         <button id="retake" type="button">Iš naujo</button>
       </div>
+
+      <div class="muted">
+        Jei Paskyros nr. ir Adresas tušti, PDF ir laiško tema bus šios dienos data.
+      </div>
     </div>
 
-    <div id="status" class="muted">Įveskite paskyros nr. ir adresą, tada pasirinkite kamerą arba galeriją.</div>
+    <div id="status" class="muted">Pasirinkite kamerą arba galeriją.</div>
     <div class="muted">Gavėjas: mindaugas.bukauskas@manobustas.lt</div>
   </div>
 
@@ -122,14 +126,6 @@
     statusEl.className = isError ? "muted danger" : "muted";
   }
 
-  function validateMeta() {
-    const accountNo = (accountNoEl.value || "").trim();
-    const address = (addressEl.value || "").trim();
-    if (!accountNo) return { ok:false, error:"Įveskite Paskyros nr." };
-    if (!address) return { ok:false, error:"Įveskite Adresą." };
-    return { ok:true, accountNo, address };
-  }
-
   function setBusy(isBusy) {
     sendBtn.disabled = isBusy;
     rotL.disabled = isBusy;
@@ -158,14 +154,8 @@
     preview.src = "";
   }
 
+  // SVARBU: nebereikalaujam meta laukų, kamera/galerija atsidaro visada
   function openPicker(which) {
-    const v = validateMeta();
-    if (!v.ok) {
-      setStatus(v.error, true);
-      return;
-    }
-
-    // click turi įvykti tiesiogiai per user gesture (button click)
     if (which === "camera") cameraInput.click();
     if (which === "gallery") galleryInput.click();
   }
@@ -208,12 +198,10 @@
     clearPreview();
     cameraInput.value = "";
     galleryInput.value = "";
-    // dažniausiai "Iš naujo" reiškia vėl fotografuoti
     cameraInput.click();
   });
 
   async function loadBitmapFromFile(file) {
-    // iOS/Safari: createImageBitmap dažnai veikia; jei ne — fallback
     if ('createImageBitmap' in window) {
       try {
         return await createImageBitmap(file, { imageOrientation: 'from-image' });
@@ -253,12 +241,6 @@
   }
 
   sendBtn.addEventListener('click', async () => {
-    const v = validateMeta();
-    if (!v.ok) {
-      setStatus(v.error, true);
-      return;
-    }
-
     if (!file) {
       setStatus("Pirma pasirinkite nuotrauką (kamera arba galerija).", true);
       return;
@@ -272,8 +254,10 @@
 
       const form = new FormData();
       form.append('photo', rotatedBlob, 'photo.jpg');
-      form.append('accountNo', v.accountNo);
-      form.append('address', v.address);
+
+      // Laukai neprivalomi – jeigu tušti, serveris pats uždės dienos datą
+      form.append('accountNo', (accountNoEl.value || "").trim());
+      form.append('address', (addressEl.value || "").trim());
 
       const res = await fetch('/upload', { method: 'POST', body: form });
       const data = await res.json();

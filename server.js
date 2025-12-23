@@ -19,13 +19,22 @@ function requireEnv(name) {
   return v;
 }
 
+function vilniusDateYYYYMMDD() {
+  const fmt = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Vilnius",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  });
+  return fmt.format(new Date()); // YYYY-MM-DD
+}
+
 function sanitizeForFilename(input) {
-  // failų sistemoms ir el. pašto priedams saugiau
   return String(input || "")
     .trim()
     .replace(/[\/\\:*?"<>|]+/g, " ")
     .replace(/\s+/g, " ")
-    .replace(/\.+$/g, "") // pabaigoje taškų nepaliekam
+    .replace(/\.+$/g, "")
     .slice(0, 140);
 }
 
@@ -33,13 +42,17 @@ function buildSubjectAndFilename(accountNoRaw, addressRaw) {
   const accountNo = String(accountNoRaw || "").trim();
   const address = String(addressRaw || "").trim();
 
-  const base = sanitizeForFilename(`${accountNo} – ${address}`);
-  const safeBase = base || "Dokumentas";
+  // Jei abu tušti -> subject/filename = dienos data (Vilnius)
+  if (!accountNo && !address) {
+    const d = vilniusDateYYYYMMDD();
+    return { subject: d, filename: `${d}.pdf` };
+  }
 
-  return {
-    subject: safeBase,
-    filename: `${safeBase}.pdf`
-  };
+  // Jei kažkas įvesta -> subject/filename = "account – address" (su tuo kas yra)
+  const baseRaw = [accountNo, address].filter(Boolean).join(" – ");
+  const base = sanitizeForFilename(baseRaw) || vilniusDateYYYYMMDD();
+
+  return { subject: base, filename: `${base}.pdf` };
 }
 
 // Visada A4 portrait. Pasukimą darome naršyklėje per preview.
@@ -56,7 +69,6 @@ async function imageToA4PortraitPdf(imageBytes) {
   const imgW = image.width;
   const imgH = image.height;
 
-  // A4 portrait points
   const pageW = 595;
   const pageH = 842;
 
@@ -87,13 +99,6 @@ app.post("/upload", upload.single("photo"), async (req, res) => {
     const accountNo = req.body?.accountNo;
     const address = req.body?.address;
 
-    if (!accountNo || !String(accountNo).trim()) {
-      return res.status(400).json({ error: "Neįvestas Paskyros nr." });
-    }
-    if (!address || !String(address).trim()) {
-      return res.status(400).json({ error: "Neįvestas Adresas." });
-    }
-
     const { subject, filename } = buildSubjectAndFilename(accountNo, address);
 
     console.log("UPLOAD: file ok size=" + req.file.size + " type=" + req.file.mimetype);
@@ -117,8 +122,8 @@ app.post("/upload", upload.single("photo"), async (req, res) => {
       subject,
       text:
         `Pridedamas PDF failas: ${filename}\n` +
-        `Paskyros nr.: ${String(accountNo).trim()}\n` +
-        `Adresas: ${String(address).trim()}`,
+        (String(accountNo || "").trim() ? `Paskyros nr.: ${String(accountNo).trim()}\n` : "") +
+        (String(address || "").trim() ? `Adresas: ${String(address).trim()}\n` : ""),
       attachments: [
         {
           content: Buffer.from(pdfBytes).toString("base64"),

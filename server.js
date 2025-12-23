@@ -19,14 +19,28 @@ function requireEnv(name) {
   return v;
 }
 
-function vilniusDateYYYYMMDD() {
-  const fmt = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Europe/Vilnius",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit"
-  });
-  return fmt.format(new Date());
+// Pašalinam simbolius, kurie blogi failo pavadinimui / antraštėms
+function sanitizeForFilename(input) {
+  return String(input || "")
+    .trim()
+    .replace(/[\/\\:*?"<>|]+/g, " ") // Windows forbidden
+    .replace(/\s+/g, " ")
+    .slice(0, 140); // apsauga nuo per ilgo pavadinimo
+}
+
+function buildSubjectAndFilename(accountNoRaw, addressRaw) {
+  const accountNo = String(accountNoRaw || "").trim();
+  const address = String(addressRaw || "").trim();
+
+  const base = sanitizeForFilename(`${accountNo} – ${address}`.trim());
+
+  // jei kažkodėl po sanitize liko tuščia
+  const safeBase = base || "Dokumentas";
+
+  return {
+    subject: safeBase,
+    filename: `${safeBase}.pdf`
+  };
 }
 
 // Visada A4 portrait, be pasukimų serveryje.
@@ -70,9 +84,22 @@ app.post("/upload", upload.single("photo"), async (req, res) => {
       return res.status(400).json({ error: "Nėra failo (photo)." });
     }
 
-    console.log("UPLOAD: file ok size=" + req.file.size + " type=" + req.file.mimetype);
+    // Tekstiniai laukai ateina per multipart/form-data ir bus req.body (multer juos surenka)
+    const accountNo = req.body?.accountNo;
+    const address = req.body?.address;
 
-    const filename = `${vilniusDateYYYYMMDD()}.pdf`;
+    if (!accountNo || !String(accountNo).trim()) {
+      return res.status(400).json({ error: "Neįvestas Paskyros nr." });
+    }
+    if (!address || !String(address).trim()) {
+      return res.status(400).json({ error: "Neįvestas Adresas." });
+    }
+
+    const { subject, filename } = buildSubjectAndFilename(accountNo, address);
+
+    console.log("UPLOAD: file ok size=" + req.file.size + " type=" + req.file.mimetype);
+    console.log("UPLOAD: subject=" + subject);
+    console.log("UPLOAD: filename=" + filename);
 
     console.log("UPLOAD: generating PDF (A4 portrait)...");
     const pdfBytes = await imageToA4PortraitPdf(req.file.buffer);
@@ -88,12 +115,12 @@ app.post("/upload", upload.single("photo"), async (req, res) => {
     await sgMail.send({
       to: TO_EMAIL,
       from: FROM_EMAIL,
-      subject: `PDF ${filename}`,
-      text: `Pridedamas PDF failas: ${filename}`,
+      subject, // <-- SUBJECT iš laukų
+      text: `Pridedamas PDF failas: ${filename}\nPaskyros nr.: ${String(accountNo).trim()}\nAdresas: ${String(address).trim()}`,
       attachments: [
         {
           content: Buffer.from(pdfBytes).toString("base64"),
-          filename,
+          filename, // <-- PDF pavadinimas iš laukų
           type: "application/pdf",
           disposition: "attachment"
         }
@@ -103,7 +130,7 @@ app.post("/upload", upload.single("photo"), async (req, res) => {
     console.log("UPLOAD: email sent");
     console.log("UPLOAD: done in ms=" + (Date.now() - startedAt));
 
-    return res.json({ ok: true, filename });
+    return res.json({ ok: true, filename, subject });
   } catch (err) {
     const sgBody = err?.response?.body;
     if (sgBody) console.error("UPLOAD ERROR (SendGrid):", JSON.stringify(sgBody));

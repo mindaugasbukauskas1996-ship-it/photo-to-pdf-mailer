@@ -19,22 +19,21 @@ function requireEnv(name) {
   return v;
 }
 
-// Pašalinam simbolius, kurie blogi failo pavadinimui / antraštėms
 function sanitizeForFilename(input) {
+  // failų sistemoms ir el. pašto priedams saugiau
   return String(input || "")
     .trim()
-    .replace(/[\/\\:*?"<>|]+/g, " ") // Windows forbidden
+    .replace(/[\/\\:*?"<>|]+/g, " ")
     .replace(/\s+/g, " ")
-    .slice(0, 140); // apsauga nuo per ilgo pavadinimo
+    .replace(/\.+$/g, "") // pabaigoje taškų nepaliekam
+    .slice(0, 140);
 }
 
 function buildSubjectAndFilename(accountNoRaw, addressRaw) {
   const accountNo = String(accountNoRaw || "").trim();
   const address = String(addressRaw || "").trim();
 
-  const base = sanitizeForFilename(`${accountNo} – ${address}`.trim());
-
-  // jei kažkodėl po sanitize liko tuščia
+  const base = sanitizeForFilename(`${accountNo} – ${address}`);
   const safeBase = base || "Dokumentas";
 
   return {
@@ -43,8 +42,7 @@ function buildSubjectAndFilename(accountNoRaw, addressRaw) {
   };
 }
 
-// Visada A4 portrait, be pasukimų serveryje.
-// (Pasukimą padarome naršyklėje per preview.)
+// Visada A4 portrait. Pasukimą darome naršyklėje per preview.
 async function imageToA4PortraitPdf(imageBytes) {
   const pdfDoc = await PDFDocument.create();
 
@@ -58,8 +56,10 @@ async function imageToA4PortraitPdf(imageBytes) {
   const imgW = image.width;
   const imgH = image.height;
 
+  // A4 portrait points
   const pageW = 595;
   const pageH = 842;
+
   const page = pdfDoc.addPage([pageW, pageH]);
 
   const scale = Math.min(pageW / imgW, pageH / imgH);
@@ -84,7 +84,6 @@ app.post("/upload", upload.single("photo"), async (req, res) => {
       return res.status(400).json({ error: "Nėra failo (photo)." });
     }
 
-    // Tekstiniai laukai ateina per multipart/form-data ir bus req.body (multer juos surenka)
     const accountNo = req.body?.accountNo;
     const address = req.body?.address;
 
@@ -101,7 +100,7 @@ app.post("/upload", upload.single("photo"), async (req, res) => {
     console.log("UPLOAD: subject=" + subject);
     console.log("UPLOAD: filename=" + filename);
 
-    console.log("UPLOAD: generating PDF (A4 portrait)...");
+    console.log("UPLOAD: generating PDF...");
     const pdfBytes = await imageToA4PortraitPdf(req.file.buffer);
     console.log("UPLOAD: PDF generated, bytes=" + pdfBytes.length);
 
@@ -111,16 +110,19 @@ app.post("/upload", upload.single("photo"), async (req, res) => {
 
     sgMail.setApiKey(SENDGRID_API_KEY);
 
-    console.log("UPLOAD: sending via SendGrid Web API...");
+    console.log("UPLOAD: sending email...");
     await sgMail.send({
       to: TO_EMAIL,
       from: FROM_EMAIL,
-      subject, // <-- SUBJECT iš laukų
-      text: `Pridedamas PDF failas: ${filename}\nPaskyros nr.: ${String(accountNo).trim()}\nAdresas: ${String(address).trim()}`,
+      subject,
+      text:
+        `Pridedamas PDF failas: ${filename}\n` +
+        `Paskyros nr.: ${String(accountNo).trim()}\n` +
+        `Adresas: ${String(address).trim()}`,
       attachments: [
         {
           content: Buffer.from(pdfBytes).toString("base64"),
-          filename, // <-- PDF pavadinimas iš laukų
+          filename,
           type: "application/pdf",
           disposition: "attachment"
         }
@@ -150,4 +152,4 @@ app.use((err, req, res, next) => {
 });
 
 const port = process.env.PORT || 3000;
-app.listen(port, () => console.log(`START: SENDGRID API MODE, port=${port}`));
+app.listen(port, () => console.log(`START: port=${port}`));
